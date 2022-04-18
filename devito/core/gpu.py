@@ -20,7 +20,7 @@ __all__ = ['DeviceNoopOperator', 'DeviceAdvOperator', 'DeviceCustomOperator',
 
 class DeviceOperatorMixin(object):
 
-    BLOCK_LEVELS = 0
+    BLOCK_LEVELS = 1
     """
     Loop blocking depth. So, 1 => "blocks", 2 => "blocks" and "sub-blocks",
     3 => "blocks", "sub-blocks", and "sub-sub-blocks", ...
@@ -59,6 +59,7 @@ class DeviceOperatorMixin(object):
     """
     Assuming all functions fit into the gpu memory.
     """
+    PAR_NESTED = 2
 
     @classmethod
     def _normalize_kwargs(cls, **kwargs):

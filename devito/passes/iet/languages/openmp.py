@@ -73,7 +73,13 @@ class DeviceOmpIteration(OmpIteration):
 
     @classmethod
     def _make_construct(cls, **kwargs):
-        return 'omp target teams distribute parallel for'
+        if 'nestedflag' in kwargs.keys() and kwargs['nestedflag']==1:
+            return 'omp parallel for'
+        elif 'nestedflag' in kwargs.keys() and kwargs['nestedflag']==2:
+            return 'omp target teams distribute'
+        else:
+            return 'omp target teams distribute parallel for'
+            
 
     @classmethod
     def _make_clauses(cls, **kwargs):
@@ -92,7 +98,7 @@ class DeviceOmpIteration(OmpIteration):
         kwargs = super()._process_kwargs(**kwargs)
 
         kwargs.pop('gpu_fit', None)
-
+        kwargs.pop('nestedflag', None)
         return kwargs
 
 

@@ -373,7 +373,7 @@ class PragmaShmTransformer(PragmaSimdTransformer):
                 continue
 
             # Introduce nested parallelism
-            subroot, subpartree = self._make_partree(candidates, self.nthreads_nested)
+            subroot, subpartree = self._make_partree(candidates, self.nthreads_nested,nestedflag=1)
 
             mapper[subroot] = subpartree
 
@@ -447,7 +447,8 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         else:
             return super()._make_threaded_prodders(partree)
 
-    def _make_partree(self, candidates, nthreads=None):
+    def _make_partree(self, candidates, nthreads=None,nestedflag=0):#tez az amit használ
+    #def _make_partree(self, candidates, nthreads=None):
         """
         Parallelize the `candidates` Iterations. In particular:
 
@@ -466,6 +467,7 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         if self._is_offloadable(root):
             body = self.DeviceIteration(gpu_fit=self.gpu_fit,
                                         ncollapse=len(collapsable) + 1,
+                                        nestedflag=nestedflag,
                                         **root.args)
             partree = ParallelTree([], body, nthreads=nthreads)
 

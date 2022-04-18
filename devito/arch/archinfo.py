@@ -638,6 +638,9 @@ class NvidiaDevice(Device):
             if 'tesla' in architecture.lower():
                 return 'tesla'
         return None
+    @property
+    def threads_per_core(self):
+        return 32
 
 
 class AmdDevice(Device):
