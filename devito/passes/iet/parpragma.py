@@ -518,11 +518,58 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         return parregion
 
     def _make_nested_partree(self, partree):
-        if isinstance(partree.root, self.DeviceIteration):
-            # no-op for now
-            return partree
-        else:
+        if not isinstance(partree.root, self.DeviceIteration):
             return super()._make_nested_partree(partree)
+        else:
+            #if self.nhyperthreads <= self.nested:
+            if str(partree.root.dim) != 'x0_blk0':
+                return partree
+
+        # Note: there might be multiple sub-trees amenable to nested parallelism,
+        # hence we loop over all of them
+        #
+        # for (i = ... )  // outer parallelism
+        #   for (j0 = ...)  // first source of nested parallelism
+        #     ...
+        #   for (j1 = ...)  // second source of nested parallelism
+        #     ...
+        mapper = {}
+        for tree in retrieve_iteration_tree(partree):
+            outer = tree[:partree.ncollapsed]
+            inner = tree[partree.ncollapsed:]
+            #mapper[tree[0]]=copy(tree[0],with construct kvargs
+            #mapper[tree[0]]=copy(tree[0],with construct kvargs
+            # Heuristic: nested parallelism is applied only if the top nested
+            # parallel Iteration iterates *within* the top outer parallel Iteration
+            # (i.e., the outer is a loop over blocks, while the nested is a loop
+            # within a block)
+            candidates = []
+            for i in inner:
+                if self.key(i) and any((i.dim.root is j.dim.root) for j in outer):
+                    candidates.append(i)
+                elif candidates:
+                    # If there's at least one candidate but `i` doesn't honor the
+                    # heuristic above, then we break, as the candidates must be
+                    # perfectly nested
+                    break
+            if not candidates:
+                continue
+            # Introduce nested parallelism to outer level
+            subroot, subpartree = self._make_partree(candidates, self.nthreads_nested,nestedflag=1)
+            mapper[subroot] = subpartree
+            
+        partree = Transformer(mapper).visit(partree)
+            
+
+        #partree.root.pragmas[0].value="omp target teams distribute collapse(3)"
+        #args2 = partree.root.args
+        #partree.root.args["nestedflag"]=2
+        #partree.root.args=args2
+        #print(partree.root.args)
+        #partree.root.args['nestedflag']=2
+        #root nested flag = 3
+
+        return partree
 
 
 class PragmaLangBB(LangBB):
