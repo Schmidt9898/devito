@@ -396,7 +396,11 @@ class PragmaShmTransformer(PragmaSimdTransformer):
                 continue
 
             # Nested parallelism
-            partree = self._make_nested_partree(partree)
+            partree,b = self._make_nested_partree(partree)
+            if b:
+                _, partree = self._make_partree(candidates,self.nthreads_nested,nestedflag=2)
+                partree,b = self._make_nested_partree(partree)
+
 
             # Handle reductions
             partree = self._make_reductions(partree)
@@ -519,11 +523,11 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
 
     def _make_nested_partree(self, partree):
         if not isinstance(partree.root, self.DeviceIteration):
-            return super()._make_nested_partree(partree)
+            return super()._make_nested_partree(partree),False
         else:
             #if self.nhyperthreads <= self.nested:
             if str(partree.root.dim) != 'x0_blk0':
-                return partree
+                return partree,False
 
         # Note: there might be multiple sub-trees amenable to nested parallelism,
         # hence we loop over all of them
@@ -569,7 +573,7 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         #partree.root.args['nestedflag']=2
         #root nested flag = 3
 
-        return partree
+        return partree,True
 
 
 class PragmaLangBB(LangBB):
