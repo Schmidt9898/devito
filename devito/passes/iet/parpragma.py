@@ -413,6 +413,7 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         self.par_tile = options['par-tile']
         self.par_disabled = options['par-disabled']
         self.thread_limit = options['thread-limit']
+        self.openmp_thread_limit=options['omp_limit']
 
     def _make_threaded_prodders(self, partree):
         if isinstance(partree.root, self.DeviceIteration):
@@ -440,7 +441,7 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         assert candidates
 
         root, collapsable = self._select_candidates(candidates)
-        threshold = 64
+        threshold = self.openmp_thread_limit
 
         if self._is_offloadable(root):
             # Get the collapsable Iterations

@@ -109,6 +109,7 @@ class DeviceOperatorMixin(object):
         o['par-disabled'] = oo.pop('par-disabled', True)  # No host parallelism by default
         o['gpu-fit'] = as_tuple(oo.pop('gpu-fit', cls._normalize_gpu_fit(**kwargs)))
         o['thread-limit'] = oo.pop('thread-limit', cls.THREAD_LIMIT)
+        o['omp_limit'] = oo.pop('omp_limit', 128)
 
         # Misc
         o['optcomms'] = oo.pop('optcomms', True)
