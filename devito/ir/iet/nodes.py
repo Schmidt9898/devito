@@ -802,7 +802,7 @@ class TimedList(List):
         self._name = lname
         self._timer = timer
 
-        super().__init__(header=c.Line('START_TIMER(%s)' % lname),
+        super().__init__(header=c.Line('START_TIMER(%s)\n//blabla' % lname),
                          body=body,
                          footer=c.Line('STOP_TIMER(%s,%s)' % (lname, timer.name)))
 

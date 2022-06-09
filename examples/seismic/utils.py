@@ -197,7 +197,9 @@ def seismic_args(description):
         def __call__(self, parser, args, values, option_string=None):
             try:
                 # E.g., `('advanced', {'par-tile': True})`
+                print(values)
                 values = eval(values)
+                print(values)
                 if not isinstance(values, tuple) and len(values) >= 1:
                     raise ArgumentError(self, ("Invalid choice `%s` (`opt` must be "
                                                "either str or tuple)" % str(values)))

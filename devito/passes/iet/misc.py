@@ -102,7 +102,7 @@ def relax_incr_dimensions(iet, **kwargs):
         roots_max = {i.dim.root: i.symbolic_max for i in outer}
 
         # Process inner iterations and adjust their bounds
-        for n, i in enumerate(inner):
+        #for n, i in enumerate(inner):
             # The Iteration's maximum is the MIN of (a) the `symbolic_max` of current
             # Iteration e.g. `x0_blk0 + x0_blk0_size - 1` and (b) the `symbolic_max`
             # of the current Iteration's root Dimension e.g. `x_M`. The generated
@@ -113,9 +113,9 @@ def relax_incr_dimensions(iet, **kwargs):
             # `i.dim.symbolic_max = x0_blk0 + x0_blk0_size - 1` then the generated
             # maximum will be `MIN(x0_blk0 + x0_blk0_size + 1, x_M + 2)`
 
-            root_max = roots_max[i.dim.root] + i.symbolic_max - i.dim.symbolic_max
-            iter_max = evalrel(min, [i.symbolic_max, root_max])
-            mapper[i] = i._rebuild(limits=(i.symbolic_min, iter_max, i.step))
+        #    root_max = roots_max[i.dim.root] + i.symbolic_max - i.dim.symbolic_max
+        #    iter_max = evalrel(min, [i.symbolic_max, root_max])
+        #    mapper[i] = i._rebuild(limits=(i.symbolic_min, iter_max, i.step))
 
     if mapper:
         iet = Transformer(mapper, nested=True).visit(iet)
