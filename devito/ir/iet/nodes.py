@@ -802,10 +802,13 @@ class TimedList(List):
         self._name = lname
         self._timer = timer
 
-        super().__init__(header=c.Line('START_TIMER(%s)\n//blabla' % lname),
-                         body=body,
-                         footer=c.Line('STOP_TIMER(%s,%s)' % (lname, timer.name)))
+        #super().__init__(header=c.Line('START_TIMER(%s)\n//blabla' % lname),
+        #                 body=body,
+        #                 footer=c.Line('STOP_TIMER(%s,%s)' % (lname, timer.name)))
 
+        super().__init__(header=c.Line('START_TIMER(%s)\n#define x0_blk0_size 8\n#define y0_blk0_size 8\n#define z0_blk0_size 8\n' % lname),
+                 body=body,
+                 footer=c.Line('STOP_TIMER(%s,%s)\n#undef x0_blk0_size\n#undef y0_blk0_size\n#undef z0_blk0_size\n' % (lname, timer.name)))
     @classmethod
     def _start_timer_header(cls):
         return ('START_TIMER(S)', ('struct timeval start_ ## S , end_ ## S ; '
