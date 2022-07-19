@@ -6,8 +6,8 @@ from devito.core.operator import CoreOperator, CustomOperator, ParTile
 from devito.exceptions import InvalidOperator
 from devito.passes.equations import collect_derivatives
 from devito.passes.clusters import (Lift, Streaming, Tasker, blocking, buffering,
-                                    cire, cse, extract_increments, factorize,
-                                    fission, fuse, optimize_pows, optimize_msds)
+                                    cire, cse, factorize, fission, fuse,
+                                    optimize_pows)
 from devito.passes.iet import (DeviceOmpTarget, DeviceAccTarget, mpiize, hoist_prodders,
                                is_on_device, linearize, relax_incr_dimensions)
 from devito.tools import as_tuple, timed_pass
@@ -56,7 +56,6 @@ class DeviceOperatorMixin(object):
     """
 
     GPU_FIT = 'all-fallback'
-    THREAD_LIMIT = None
     """
     Assuming all functions fit into the gpu memory.
     """
@@ -65,6 +64,16 @@ class DeviceOperatorMixin(object):
     """
     Use nested parallelism if the number of hyperthreads per core is greater
     than this threshold.
+    """
+
+    THREAD_LIMIT = None
+    """
+    Use a THREAD_LIMIT to trigger nested tiling parallelism for GPUs
+    """
+
+    OMP_LIMIT = 128
+    """
+    Use a THREAD_LIMIT to trigger nested tiling parallelism for GPUs
     """
 
     @classmethod
@@ -109,6 +118,7 @@ class DeviceOperatorMixin(object):
         o['par-disabled'] = oo.pop('par-disabled', True)  # No host parallelism by default
         o['gpu-fit'] = as_tuple(oo.pop('gpu-fit', cls._normalize_gpu_fit(**kwargs)))
         o['thread-limit'] = oo.pop('thread-limit', cls.THREAD_LIMIT)
+        o['omp-limit'] = oo.pop('omp-limit', cls.OMP_LIMIT)
 
         # Misc
         o['optcomms'] = oo.pop('optcomms', True)
@@ -139,15 +149,16 @@ class DeviceNoopOperator(DeviceOperatorMixin, CoreOperator):
     def _specialize_iet(cls, graph, **kwargs):
         options = kwargs['options']
         platform = kwargs['platform']
+        compiler = kwargs['compiler']
         sregistry = kwargs['sregistry']
 
         # Distributed-memory parallelism
         mpiize(graph, sregistry=sregistry, options=options)
 
         # GPU parallelism
-        parizer = cls._Target.Parizer(sregistry, options, platform)
+        parizer = cls._Target.Parizer(sregistry, options, platform, compiler)
         parizer.make_parallel(graph)
-        parizer.initialize(graph)
+        parizer.initialize(graph, options=options)
 
         # Symbol definitions
         cls._Target.DataManager(sregistry, options).process(graph)
@@ -171,9 +182,6 @@ class DeviceAdvOperator(DeviceOperatorMixin, CoreOperator):
         platform = kwargs['platform']
         sregistry = kwargs['sregistry']
 
-        # Optimize MultiSubDomains
-        clusters = optimize_msds(clusters)
-
         # Toposort+Fusion (the former to expose more fusion opportunities)
         clusters = fuse(clusters, toposort=True, options=options)
 
@@ -189,7 +197,6 @@ class DeviceAdvOperator(DeviceOperatorMixin, CoreOperator):
             clusters = blocking(clusters, sregistry, options)
 
         # Reduce flops
-        clusters = extract_increments(clusters, sregistry)
         clusters = cire(clusters, 'sops', sregistry, options, platform)
         clusters = factorize(clusters)
         clusters = optimize_pows(clusters)
@@ -211,18 +218,19 @@ class DeviceAdvOperator(DeviceOperatorMixin, CoreOperator):
     def _specialize_iet(cls, graph, **kwargs):
         options = kwargs['options']
         platform = kwargs['platform']
+        compiler = kwargs['compiler']
         sregistry = kwargs['sregistry']
 
         # Distributed-memory parallelism
         mpiize(graph, sregistry=sregistry, options=options)
 
-        # Loop tiling
+        # Lower BlockDimensions so that blocks of arbitrary shape may be used
         relax_incr_dimensions(graph)
 
         # GPU parallelism
-        parizer = cls._Target.Parizer(sregistry, options, platform)
+        parizer = cls._Target.Parizer(sregistry, options, platform, compiler)
         parizer.make_parallel(graph)
-        parizer.initialize(graph)
+        parizer.initialize(graph, options=options)
 
         # Misc optimizations
         hoist_prodders(graph)
@@ -291,9 +299,10 @@ class DeviceCustomOperator(DeviceOperatorMixin, CustomOperator):
     def _make_iet_passes_mapper(cls, **kwargs):
         options = kwargs['options']
         platform = kwargs['platform']
+        compiler = kwargs['compiler']
         sregistry = kwargs['sregistry']
 
-        parizer = cls._Target.Parizer(sregistry, options, platform)
+        parizer = cls._Target.Parizer(sregistry, options, platform, compiler)
         orchestrator = cls._Target.Orchestrator(sregistry)
 
         return {
@@ -303,7 +312,7 @@ class DeviceCustomOperator(DeviceOperatorMixin, CustomOperator):
             'linearize': partial(linearize, mode=options['linearize'],
                                  sregistry=sregistry),
             'prodders': partial(hoist_prodders),
-            'init': parizer.initialize
+            'init': partial(parizer.initialize, options=options)
         }
 
     _known_passes = (

@@ -5,7 +5,8 @@ from cached_property import cached_property
 import numpy as np
 
 from devito.ir import (Cluster, Forward, GuardBound, Interval, IntervalGroup,
-                       IterationSpace, PARALLEL, Queue, Vector, lower_exprs, vmax, vmin)
+                       IterationSpace, PARALLEL, Queue, SEQUENTIAL, Vector,
+                       lower_exprs, normalize_properties, vmax, vmin)
 from devito.exceptions import InvalidOperator
 from devito.logger import warning
 from devito.symbolics import retrieve_function_carriers, uxreplace
@@ -50,17 +51,7 @@ def buffering(clusters, callback, sregistry, options, **kwargs):
           implemented by other passes).
     **kwargs
         Additional compilation options.
-        Accepted: ['opt-mem-space', 'opt-dtype', 'opt-noinit'].
-        * 'opt_mem_space': Allocate the buffer in the given memory space, rather
-        than in the `mapped` memory space (default). For example, one could pass
-        `local` for the local memory space (also see Array.__doc__), that is:
-
-            * the host DRAM if platform=CPU
-            * the device DRAM if platform=GPU
-
-        * 'opt_dtype': A callback that takes a buffering candidate as input
-        and returns the data type of the buffer, which would otherwise default
-        to the data type of the buffering candidate itself.
+        Accepted: ['opt_noinit', 'opt_buffer'].
         * 'opt_noinit': By default, a read buffer always triggers the generation
         of an initializing Cluster (see example below). When the size of the
         buffer is 1, the step-through Cluster may suffice, however. In such
@@ -69,6 +60,8 @@ def buffering(clusters, callback, sregistry, options, **kwargs):
         pass, as the step-through Cluster cannot be further transformed or
         the buffer might never be initialized with the content of the buffered
         Function.
+        * 'opt_buffer': A callback that takes a buffering candidate as input
+        and returns a buffer, which would otherwise default to an Array.
 
     Examples
     --------
@@ -107,9 +100,8 @@ def buffering(clusters, callback, sregistry, options, **kwargs):
 
     options = {
         'buf-async-degree': options['buf-async-degree'],
-        'buf-mem-space': kwargs.get('opt_mem_space', 'mapped'),
-        'buf-dtype': kwargs.get('opt_dtype', lambda f: f.dtype),
-        'buf-noinit': kwargs.get('opt_noinit', False)
+        'buf-noinit': kwargs.get('opt_noinit', False),
+        'buf-callback': kwargs.get('opt_buffer'),
     }
 
     return Buffering(callback, sregistry, options).process(clusters)
@@ -207,7 +199,16 @@ class Buffering(Queue):
                 expr = lower_exprs(uxreplace(Eq(lhs, rhs), b.subdims_mapper))
                 ispace = b.written
 
-                processed.append(c.rebuild(exprs=expr, ispace=ispace))
+                # Buffering creates a storage-related dependence along the
+                # contracted dimensions
+                properties = dict(c.properties)
+                for d in b.contraction_mapper:
+                    d = ispace[d].dim  # E.g., `time_sub -> time`
+                    properties[d] = normalize_properties(properties[d], {SEQUENTIAL})
+
+                processed.append(
+                    c.rebuild(exprs=expr, ispace=ispace, properties=properties)
+                )
 
             # Substitute buffered Functions with the newly created buffers
             exprs = [uxreplace(e, subs) for e in c.exprs]
@@ -233,7 +234,16 @@ class Buffering(Queue):
                 expr = lower_exprs(uxreplace(Eq(lhs, rhs), b.subdims_mapper))
                 ispace = b.written
 
-                processed.append(c.rebuild(exprs=expr, ispace=ispace))
+                # Buffering creates a storage-related dependence along the
+                # contracted dimensions
+                properties = dict(c.properties)
+                for d in b.contraction_mapper:
+                    d = ispace[d].dim  # E.g., `time_sub -> time`
+                    properties[d] = normalize_properties(properties[d], {SEQUENTIAL})
+
+                processed.append(
+                    c.rebuild(exprs=expr, ispace=ispace, properties=properties)
+                )
 
         return processed
 
@@ -289,8 +299,7 @@ class Buffer(object):
                  bds=None, mds=None):
         # Parse compilation options
         async_degree = options['buf-async-degree']
-        space = options['buf-mem-space']
-        dtype = options['buf-dtype'](function)
+        callback = options['buf-callback']
 
         self.function = function
         self.accessv = accessv
@@ -390,11 +399,17 @@ class Buffer(object):
                 self.itintervals_mapper.setdefault(i, (interval.relaxed, (), Forward))
 
         # Finally create the actual buffer
-        self.buffer = Array(name=sregistry.make_name(prefix='%sb' % function.name),
-                            dimensions=dims,
-                            dtype=dtype,
-                            halo=function.halo,
-                            space=space)
+        kwargs = {
+            'name': sregistry.make_name(prefix='%sb' % function.name),
+            'dimensions': dims,
+            'dtype': function.dtype,
+            'halo': function.halo,
+            'space': 'mapped'
+        }
+        try:
+            self.buffer = callback(function, **kwargs)
+        except TypeError:
+            self.buffer = Array(**kwargs)
 
     def __repr__(self):
         return "Buffer[%s,<%s>]" % (self.buffer.name,
@@ -444,9 +459,12 @@ class Buffer(object):
         intervals = []
         sub_iterators = {}
         directions = {}
-        for d in self.buffer.dimensions:
+        for d, h in zip(self.buffer.dimensions, self.buffer._size_halo):
             try:
                 interval, si, direction = self.itintervals_mapper[d]
+                # The initialization must comprise the halo region as well, since
+                # in principle this could be accessed through a stencil
+                interval = interval.translate(v0=-h.left, v1=h.right)
             except KeyError:
                 # E.g., the contraction Dimension `db0`
                 assert d in self.contraction_mapper.values()
